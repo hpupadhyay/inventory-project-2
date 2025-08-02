@@ -1,0 +1,36 @@
+{% extends "inventory/base.html" %}
+{% load crispy_forms_tags %}
+
+{% block content %}
+<h2 class="text-3xl font-bold mb-6">Edit Warehouse Transfer (Ref-{{ object.reference_no }})</h2>
+
+<form method="post">
+    {% csrf_token %}
+    <div class="bg-white p-6 rounded-lg shadow-md mb-8">
+        <h3 class="text-xl font-bold mb-4">Transfer Details</h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {{ header_form|crispy }}
+        </div>
+    </div>
+
+    <div class="bg-white p-6 rounded-lg shadow-md">
+        <h3 class="text-xl font-bold mb-4">Items to Transfer</h3>
+        {{ item_formset.management_form }}
+        <div class="overflow-x-auto">
+            <table class="min-w-full">
+                <thead><tr class="border-b"><th class="text-left py-2 px-3">Group</th><th class="text-left py-2 px-3">Item</th><th class="text-left py-2 px-3">From</th><th class="text-left py-2 px-3">To</th><th class="text-left py-2 px-3">Qty</th><th class="text-left py-2 px-3">Delete?</th></tr></thead>
+                <tbody id="item-form-list">
+                    {% for form in item_formset %}
+                    <tr class="item-form border-b">
+                        <td class="py-2 px-3">{{ form.group }}</td><td class="py-2 px-3">{{ form.item }}</td><td class="py-2 px-3">{{ form.from_warehouse }}</td><td class="py-2 px-3">{{ form.to_warehouse }}</td><td class="py-2 px-3">{{ form.quantity }}</td><td class="py-2 px-3 align-bottom">{{ form.DELETE }}</td><td class="hidden">{{ form.id }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <button type="button" id="add-item-form" class="mt-4 bg-green-500 text-white font-bold py-2 px-4 rounded hover:bg-green-600">Add Another Item</button>
+    </div>
+
+    <div class="mt-8"><button type="submit" class="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700">Update Transfer</button></div>
+</form>
+{% endblock %}

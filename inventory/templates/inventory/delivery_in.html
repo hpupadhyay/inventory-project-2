@@ -1,0 +1,79 @@
+{% extends "inventory/base.html" %}
+{% load crispy_forms_tags %}
+
+{% block content %}
+<h2 class="text-3xl font-bold mb-6">Material In (Return)</h2>
+
+<form method="post">
+    {% csrf_token %}
+    <div class="bg-white p-6 rounded-lg shadow-md mb-8">
+        <h3 class="text-xl font-bold mb-4">Return Details</h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {{ header_form|crispy }}
+        </div>
+    </div>
+
+    <div class="bg-white p-6 rounded-lg shadow-md">
+        <h3 class="text-xl font-bold mb-4">Items to Return</h3>
+        <div class="mb-4">
+            <label class="font-medium">1. Select Person/Company with Pending Items</label>
+            <select id="person-select" class="w-full mt-1 border-gray-300 rounded-md shadow-sm">
+                <option value="">-- Select --</option>
+                {% for person in pending_persons %}<option value="{{ person }}">{{ person }}</option>{% endfor %}
+            </select>
+        </div>
+        
+        <div class="overflow-x-auto">
+            <table class="min-w-full">
+                <thead><tr class="border-b"><th class="text-left py-2 px-3">Item</th><th class="text-left py-2 px-3">From Warehouse</th><th class="text-left py-2 px-3">Pending Qty</th><th class="text-left py-2 px-3">Return to Warehouse</th><th class="text-left py-2 px-3">Return Qty</th></tr></thead>
+                <tbody id="pending-items-list">
+                    <tr><td colspan="5" class="text-center py-4 text-gray-500">Select a person to see pending items.</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="mt-8"><button type="submit" class="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700">Submit Material In</button></div>
+</form>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const personSelect = document.getElementById('person-select');
+    const itemsList = document.getElementById('pending-items-list');
+    const warehouses = `{% for wh in warehouses %}<option value="{{ wh.pk }}">{{ wh.name }}</option>{% endfor %}`;
+
+    personSelect.addEventListener('change', function() {
+        const personName = this.value;
+        if (!personName) {
+            itemsList.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-gray-500">Select a person to see pending items.</td></tr>';
+            return;
+        }
+
+        fetch(`/api/get-pending-items/?person=${encodeURIComponent(personName)}`)
+            .then(response => response.json())
+            .then(data => {
+                itemsList.innerHTML = '';
+                if (data.items.length === 0) {
+                     itemsList.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-gray-500">No pending items for this person.</td></tr>';
+                } else {
+                    data.items.forEach(item => {
+                        const row = document.createElement('tr');
+                        row.classList.add('border-b');
+                        row.innerHTML = `
+                            <td class="py-2 px-3">${item.item_name}</td>
+                            <td class="py-2 px-3">${item.from_warehouse}</td>
+                            <td class="py-2 px-3">${item.pending_quantity}</td>
+                            <td class="py-2 px-3"><select name="return_warehouse_id" class="w-full border-gray-300 rounded-md shadow-sm">${warehouses}</select></td>
+                            <td class="py-2 px-3">
+                                <input type="number" name="return_quantity" value="0" min="0" max="${item.pending_quantity}" class="w-full border-gray-300 rounded-md shadow-sm">
+                                <input type="hidden" name="original_item_id" value="${item.id}">
+                            </td>
+                        `;
+                        itemsList.appendChild(row);
+                    });
+                }
+            });
+    });
+});
+</script>
+{% endblock %}

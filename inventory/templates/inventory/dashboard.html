@@ -1,0 +1,54 @@
+{% extends "inventory/base.html" %}
+
+{% block content %}
+<h2 class="text-3xl font-bold mb-6">Dashboard</h2>
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+    <div class="bg-white p-6 rounded-lg shadow-md">
+        <h3 class="text-lg font-semibold text-gray-600">Total Unique Items</h3>
+        <p class="text-3xl font-bold text-blue-500">{{ total_items }}</p>
+    </div>
+    <div class="bg-white p-6 rounded-lg shadow-md">
+        <h3 class="text-lg font-semibold text-gray-600">Inward Transactions</h3>
+        <p class="text-3xl font-bold text-green-500">{{ inward_count }}</p>
+    </div>
+    <div class="bg-white p-6 rounded-lg shadow-md">
+        <h3 class="text-lg font-semibold text-gray-600">Outward Transactions</h3>
+        <p class="text-3xl font-bold text-red-500">{{ outward_count }}</p>
+    </div>
+    <div class="bg-white p-6 rounded-lg shadow-md">
+        <h3 class="text-lg font-semibold text-gray-600">Items with Low Stock</h3>
+        <p class="text-3xl font-bold text-yellow-500">{{ low_stock_count }}</p>
+    </div>
+</div>
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8">
+    <div class="bg-white p-6 rounded-lg shadow-md">
+        <h3 class="text-xl font-bold mb-4">Top 5 Items by Stock</h3>
+        <canvas id="stock-chart"></canvas>
+    </div>
+    <div class="bg-white p-6 rounded-lg shadow-md">
+        <h3 class="text-xl font-bold mb-4">Daily Transactions (Last 7 Days)</h3>
+        <canvas id="transaction-chart"></canvas>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const stockCtx = document.getElementById('stock-chart')?.getContext('2d');
+    if (stockCtx) {
+        new Chart(stockCtx, {
+            type: 'bar',
+            data: {
+                labels: {{ chart_labels|safe }},
+                datasets: [{
+                    label: 'Current Stock',
+                    data: {{ chart_data|safe }},
+                    backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                }]
+            },
+            options: { responsive: true, scales: { y: { beginAtZero: true } } }
+        });
+    }
+    // You can add the transaction chart here with a new API endpoint if needed
+});
+</script>
+{% endblock %}

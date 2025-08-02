@@ -1,0 +1,115 @@
+{% extends "inventory/base.html" %}
+{% load crispy_forms_tags %}
+
+{% block content %}
+<h2 class="text-3xl font-bold mb-6">Edit Production (Ref-{{ object.reference_no }})</h2>
+
+<form method="post">
+    {% csrf_token %}
+    <div class="bg-white p-6 rounded-lg shadow-md mb-8">
+        <h3 class="text-xl font-bold mb-4">Production Details</h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">{{ header_form|crispy }}</div>
+    </div>
+    
+    <div class="bg-white p-6 rounded-lg shadow-md mb-8">
+        <h3 class="text-xl font-bold mb-4">Produced Items</h3>
+        {{ produced_formset.management_form }}
+        <table class="min-w-full">
+            <thead><tr class="border-b"><th class="text-left py-2 px-3">Group</th><th class="text-left py-2 px-3">Item</th><th class="text-left py-2 px-3">Warehouse</th><th class="text-left py-2 px-3">Quantity</th><th class="text-left py-2 px-3">Actions</th></tr></thead>
+            <tbody id="produced-form-list">
+                {% for form in produced_formset %}<tr class="item-form border-b"><td class="py-2 px-3">{{ form.group }}</td><td class="py-2 px-3">{{ form.item }}</td><td class="py-2 px-3">{{ form.warehouse }}</td><td class="py-2 px-3">{{ form.quantity }}</td><td class="py-2 px-3 align-bottom whitespace-nowrap"><span class="hidden">{{ form.DELETE }}</span><button type="button" class="remove-item-form text-red-500 hover:text-red-700 font-bold">Remove</button></td><td class="hidden">{{ form.id }}</td></tr>{% endfor %}
+            </tbody>
+        </table>
+        <button type="button" id="add-produced-form" class="mt-4 bg-green-500 text-white font-bold py-2 px-4 rounded hover:bg-green-600">Add Produced Item</button>
+    </div>
+
+    <div class="bg-white p-6 rounded-lg shadow-md">
+        <h3 class="text-xl font-bold mb-4">Consumed Items</h3>
+        {{ consumed_formset.management_form }}
+        <table class="min-w-full">
+            <thead><tr class="border-b"><th class="text-left py-2 px-3">Group</th><th class="text-left py-2 px-3">Item</th><th class="text-left py-2 px-3">Warehouse</th><th class="text-left py-2 px-3">Quantity</th><th class="text-left py-2 px-3">Actions</th></tr></thead>
+            <tbody id="consumed-form-list">
+                {% for form in consumed_formset %}<tr class="item-form border-b"><td class="py-2 px-3">{{ form.group }}</td><td class="py-2 px-3">{{ form.item }}</td><td class="py-2 px-3">{{ form.warehouse }}</td><td class="py-2 px-3">{{ form.quantity }}</td><td class="py-2 px-3 align-bottom whitespace-nowrap"><span class="hidden">{{ form.DELETE }}</span><button type="button" class="remove-item-form text-red-500 hover:text-red-700 font-bold">Remove</button></td><td class="hidden">{{ form.id }}</td></tr>{% endfor %}
+            </tbody>
+        </table>
+        <button type="button" id="add-consumed-form" class="mt-4 bg-green-500 text-white font-bold py-2 px-4 rounded hover:bg-green-600">Add Consumed Item</button>
+    </div>
+
+    <div class="mt-8"><button type="submit" class="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700">Update Production Entry</button></div>
+</form>
+
+<table class="hidden">
+    <tr id="produced-empty-form" class="item-form border-b"><td class="py-2 px-3">{{ produced_formset.empty_form.group }}</td><td class="py-2 px-3">{{ produced_formset.empty_form.item }}</td><td class="py-2 px-3">{{ produced_formset.empty_form.warehouse }}</td><td class="py-2 px-3">{{ produced_formset.empty_form.quantity }}</td><td class="py-2 px-3 align-bottom"><button type="button" class="remove-item-form text-red-500 hover:text-red-700 font-bold">Remove</button></td></tr>
+    <tr id="consumed-empty-form" class="item-form border-b"><td class="py-2 px-3">{{ consumed_formset.empty_form.group }}</td><td class="py-2 px-3">{{ consumed_formset.empty_form.item }}</td><td class="py-2 px-3">{{ consumed_formset.empty_form.warehouse }}</td><td class="py-2 px-3">{{ consumed_formset.empty_form.quantity }}</td><td class="py-2 px-3 align-bottom"><button type="button" class="remove-item-form text-red-500 hover:text-red-700 font-bold">Remove</button></td></tr>
+</table>
+
+<script>
+$(document).ready(function() {
+    // --- EXPLICIT SCRIPT FOR PRODUCED ITEMS ---
+    function initializeProducedRow(row) {
+        const groupSelect = $(row).find('select[name^="produced-"][name$="-group"]');
+        const itemSelect = $(row).find('select[name^="produced-"][name$="-item"]');
+        groupSelect.select2({ theme: "classic", width: '100%' });
+        function setupItemSelect(groupId) {
+            if (groupId) {
+                itemSelect.prop('disabled', false);
+                itemSelect.select2({ theme: "classic", width: '100%', ajax: { url: "{% url 'get_items_api' %}", dataType: 'json', data: (p) => ({ term: p.term, group_id: groupId }), processResults: (d) => ({ results: d.results })}, placeholder: 'Type to search...'});
+            } else {
+                itemSelect.prop('disabled', true);
+                itemSelect.select2({ theme: "classic", width: '100%', placeholder: 'Select a group first' });
+            }
+        }
+        groupSelect.on('change', function() { itemSelect.val(null).trigger('change'); setupItemSelect($(this).val()); });
+        setupItemSelect(groupSelect.val());
+    }
+    $('#produced-form-list .item-form').each(function() { initializeProducedRow(this); });
+    $('#add-produced-form').click(function() {
+        const totalForms = document.querySelector('input[name="produced-TOTAL_FORMS"]');
+        const formIndex = parseInt(totalForms.value);
+        const newRowHtml = $('#produced-empty-form').prop('outerHTML').replace(/__prefix__/g, formIndex);
+        const newRow = $(newRowHtml).appendTo('#produced-form-list');
+        totalForms.value = formIndex + 1;
+        initializeProducedRow(newRow);
+    });
+
+    // --- EXPLICIT SCRIPT FOR CONSUMED ITEMS ---
+    function initializeConsumedRow(row) {
+        const groupSelect = $(row).find('select[name^="consumed-"][name$="-group"]');
+        const itemSelect = $(row).find('select[name^="consumed-"][name$="-item"]');
+        groupSelect.select2({ theme: "classic", width: '100%' });
+        function setupItemSelect(groupId) {
+            if (groupId) {
+                itemSelect.prop('disabled', false);
+                itemSelect.select2({ theme: "classic", width: '100%', ajax: { url: "{% url 'get_items_api' %}", dataType: 'json', data: (p) => ({ term: p.term, group_id: groupId }), processResults: (d) => ({ results: d.results })}, placeholder: 'Type to search...'});
+            } else {
+                itemSelect.prop('disabled', true);
+                itemSelect.select2({ theme: "classic", width: '100%', placeholder: 'Select a group first' });
+            }
+        }
+        groupSelect.on('change', function() { itemSelect.val(null).trigger('change'); setupItemSelect($(this).val()); });
+        setupItemSelect(groupSelect.val());
+    }
+    $('#consumed-form-list .item-form').each(function() { initializeConsumedRow(this); });
+    $('#add-consumed-form').click(function() {
+        const totalForms = document.querySelector('input[name="consumed-TOTAL_FORMS"]');
+        const formIndex = parseInt(totalForms.value);
+        const newRowHtml = $('#consumed-empty-form').prop('outerHTML').replace(/__prefix__/g, formIndex);
+        const newRow = $(newRowHtml).appendTo('#consumed-form-list');
+        totalForms.value = formIndex + 1;
+        initializeConsumedRow(newRow);
+    });
+
+    // --- REMOVE BUTTON HANDLER (Works for both) ---
+    $('tbody').on('click', '.remove-item-form', function() {
+        const itemRow = $(this).closest('.item-form');
+        const deleteInput = itemRow.find('input[name$="-DELETE"]');
+        if (deleteInput.length > 0) {
+            deleteInput.prop('checked', true);
+            itemRow.hide();
+        } else {
+            itemRow.remove();
+        }
+    });
+});
+</script>
+{% endblock %}
