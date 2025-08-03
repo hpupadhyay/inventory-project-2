@@ -36,6 +36,10 @@ from .views import (
     OutwardUpdateView, OutwardDeleteView,
     ProductionUpdateView, ProductionDeleteView,
     BOMView,
+    get_pending_delivery_items_api,
+    DeliveryNoteReportView, DeliveryOutUpdateView, DeliveryOutDeleteView,
+    DeliveryInUpdateView, DeliveryInDeleteView,
+    PeriodSettingView 
 )
 
 urlpatterns = [
@@ -72,6 +76,8 @@ urlpatterns = [
     path('delivery-out/', DeliveryOutView.as_view(), name='delivery_out'),
     path('delivery-in/', DeliveryInView.as_view(), name='delivery_in'),
     path('api/get-pending-items/', get_pending_items_for_person, name='get_pending_items'),
+    path('api/get-pending-delivery-items/', get_pending_delivery_items_api, name='get_pending_delivery_items_api'),
+    
     
     # Reports
     path('report/', StockReportView.as_view(), name='stock_report'),
@@ -89,6 +95,12 @@ urlpatterns = [
     path('adjustment/<int:pk>/edit/', StockAdjustmentUpdateView.as_view(), name='stock_adjustment_edit'),
     path('adjustment/<int:pk>/delete/', StockAdjustmentDeleteView.as_view(), name='stock_adjustment_delete'),
     
+    path('delivery-out/<int:pk>/edit/', DeliveryOutUpdateView.as_view(), name='delivery_out_edit'),
+    path('delivery-out/<int:pk>/delete/', DeliveryOutDeleteView.as_view(), name='delivery_out_delete'),
+    path('report/delivery-note/', DeliveryNoteReportView.as_view(), name='delivery_note_report'),
+    path('delivery-in/<int:pk>/edit/', DeliveryInUpdateView.as_view(), name='delivery_in_edit'),
+    path('delivery-in/<int:pk>/delete/', DeliveryInDeleteView.as_view(), name='delivery_in_delete'),
+    
     path('settings/bom/', BOMView.as_view(), name='bom_create'),
     
     
@@ -101,4 +113,7 @@ urlpatterns = [
     
     # Better User options
     path('api/get-items/', get_items_api, name='get_items_api'),
+    
+    #Setting
+     path('settings/period/', PeriodSettingView.as_view(), name='period_setting'),
 ]

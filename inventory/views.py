@@ -8,19 +8,21 @@ from django.contrib import messages
 from django.db.models import Sum, Count, Q
 from django.forms import inlineformset_factory
 from django.db import transaction
-from django.http import JsonResponse, HttpResponse
+from django.http import JsonResponse, HttpResponse, HttpResponseRedirect
 from django.db import models
 from django.views.generic.edit import UpdateView, DeleteView
 from django.urls import reverse_lazy
 from django.core.paginator import Paginator
 from datetime import datetime
+from django.db.models import Sum
+from django.utils import timezone
 
 # Import your models
 from .models import (
     ItemMaster, InwardHeader, GroupMaster, WarehouseMaster, Contact, OpeningStock, 
     InwardItem, OutwardHeader, OutwardItem, ProductionHeader, ProductionItem, 
     WarehouseTransferHeader, WarehouseTransferItem, DeliveryOutHeader, 
-    DeliveryOutItem, DeliveryInHeader, DeliveryInItem, StockAdjustmentHeader, StockAdjustmentItem, BillOfMaterial, BOMItem,
+    DeliveryOutItem, DeliveryInHeader, DeliveryInItem, StockAdjustmentHeader, StockAdjustmentItem, BillOfMaterial, BOMItem, SystemSetting
 )
 
 # Import your forms
@@ -28,7 +30,7 @@ from .forms import (
     ItemMasterForm, GroupMasterForm, WarehouseMasterForm, ContactForm, InwardHeaderForm, 
     InwardItemForm, OutwardHeaderForm, OutwardItemForm, ProductionHeaderForm, ProductionItemForm,
     WarehouseTransferHeaderForm, WarehouseTransferItemForm, DeliveryOutHeaderForm, 
-    DeliveryOutItemForm, DeliveryInHeaderForm, StockAdjustmentHeaderForm, StockAdjustmentItemForm, BOMForm, BOMItemForm
+    DeliveryOutItemForm, DeliveryInHeaderForm, DeliveryInItemForm, StockAdjustmentHeaderForm, StockAdjustmentItemForm, BOMForm, BOMItemForm, SystemSettingForm
 )
 
 
@@ -37,35 +39,52 @@ class CustomLoginView(LoginView):
     template_name = 'inventory/login.html'
     redirect_authenticated_user = True
 
+
 class DashboardView(LoginRequiredMixin, View):
     def get(self, request):
-        total_items = ItemMaster.objects.count()
-        inward_count = InwardHeader.objects.count()
-        top_stock = ItemMaster.objects.annotate(stock_count=Count('id')).order_by('-stock_count')[:5]
+        # Define a reorder level threshold
+        low_stock_threshold = 10
+
+        # Calculate total stock value (assuming you add a 'price' field to ItemMaster later)
+        # For now, we'll just sum the quantities
+        total_stock_quantity = OpeningStock.objects.aggregate(total=Sum('quantity'))['total'] or 0
+
+        # Find the top 5 items with the highest stock
+        top_items = OpeningStock.objects.select_related('item').order_by('-quantity')[:5]
+
+        # Find all items with stock less than or equal to the threshold
+        low_stock_items = OpeningStock.objects.select_related('item').filter(quantity__lte=low_stock_threshold).order_by('quantity')
+
         context = {
-            'total_items': total_items,
-            'inward_count': inward_count,
-            'outward_count': 0, 
-            'low_stock_count': 0,
-            'chart_labels': [item.name for item in top_stock],
-            'chart_data': [item.stock_count for item in top_stock],
+            'total_items_count': ItemMaster.objects.count(),
+            'total_stock_quantity': total_stock_quantity,
+            'low_stock_items_count': low_stock_items.count(),
+            'top_items': top_items,
+            'low_stock_items': low_stock_items,
+            'chart_labels': [item.item.name for item in top_items],
+            'chart_data': [item.quantity for item in top_items],
         }
         return render(request, 'inventory/dashboard.html', context)
 
 # View for Item Master page
 
 class ItemMasterView(LoginRequiredMixin, View):
+# inventory/views.py -> Inside ItemMasterView
+
     def get(self, request):
-        # The get method for displaying the page remains the same
         form = ItemMasterForm()
         items_list = ItemMaster.objects.select_related('group').all().order_by('name')
+        
         search_query = request.GET.get('search_query', '')
-        group_filter = request.GET.get('group_filter', '')
+        group_filter = request.GET.get('group_filter') # Get the raw value first
         per_page = request.GET.get('per_page', 10)
 
         if search_query:
             items_list = items_list.filter(Q(name__icontains=search_query) | Q(code__icontains=search_query))
-        if group_filter:
+        
+        # --- THIS IS THE FIX ---
+        # Only apply the filter if group_filter exists and is not the string 'None'
+        if group_filter and group_filter != 'None':
             items_list = items_list.filter(group_id=group_filter)
 
         paginator = Paginator(items_list, per_page)
@@ -73,8 +92,11 @@ class ItemMasterView(LoginRequiredMixin, View):
         page_obj = paginator.get_page(page_number)
 
         context = {
-            'form': form, 'items': page_obj, 'groups': GroupMaster.objects.all(),
-            'search_query': search_query, 'group_filter': int(group_filter) if group_filter else None,
+            'form': form, 
+            'items': page_obj, 
+            'groups': GroupMaster.objects.all(),
+            'search_query': search_query, 
+            'group_filter': int(group_filter) if (group_filter and group_filter.isnumeric()) else None,
             'per_page': per_page,
         }
         return render(request, 'inventory/item_master.html', context)
@@ -611,114 +633,141 @@ class WarehouseTransferView(LoginRequiredMixin, View):
 
 class DeliveryOutView(LoginRequiredMixin, View):
     DeliveryOutItemFormSet = inlineformset_factory(
-        DeliveryOutHeader, 
-        DeliveryOutItem, 
-        form=DeliveryOutItemForm, 
-        extra=1, 
-        can_delete=False
+        DeliveryOutHeader, DeliveryOutItem, form=DeliveryOutItemForm, 
+        extra=1, can_delete=True, 
     )
+
     def get(self, request):
         header_form = DeliveryOutHeaderForm()
         item_formset = self.DeliveryOutItemFormSet()
-        context = {'header_form': header_form, 'item_formset': item_formset}
+        context = {
+            'header_form': header_form,
+            'item_formset': item_formset,
+        }
         return render(request, 'inventory/delivery_out.html', context)
 
     @transaction.atomic
     def post(self, request):
-        header_form = DeliveryOutHeaderForm(request.POST)
-        item_formset = self.DeliveryOutItemFormSet(request.POST)
+        post_data = request.POST.copy()
+        to_person_id_or_name = post_data.get('to_person')
+
+        if to_person_id_or_name and not to_person_id_or_name.isnumeric():
+            # Assumes new contacts are Customers, change if needed
+            contact, _ = Contact.objects.get_or_create(
+                name=to_person_id_or_name.strip(), 
+                defaults={'type': 'Customer'}
+            )
+            post_data['to_person'] = contact.id
+        
+        header_form = DeliveryOutHeaderForm(post_data)
+        item_formset = self.DeliveryOutItemFormSet(post_data)
 
         if header_form.is_valid() and item_formset.is_valid():
             delivery_header = header_form.save(commit=False)
             delivery_header.created_by = request.user
             delivery_header.save()
 
-            items = item_formset.save(commit=False)
-            for item_instance in items:
-                item_instance.header = delivery_header
-                item_instance.save()
-                
-                # DECREASE stock when material is sent out
-                stock, _ = OpeningStock.objects.get_or_create(
-                    item=item_instance.item, warehouse=item_instance.from_warehouse
-                )
-                stock.quantity -= item_instance.issued_quantity
-                stock.save()
+            for form in item_formset:
+                if form.cleaned_data and not form.cleaned_data.get('DELETE'):
+                    item_instance = form.save(commit=False)
+                    item_instance.header = delivery_header
+                    item_instance.save()
+                    stock, _ = OpeningStock.objects.get_or_create(
+                        item=item_instance.item, warehouse=item_instance.from_warehouse
+                    )
+                    stock.quantity -= item_instance.issued_quantity
+                    stock.save()
 
             messages.success(request, 'Material Out entry successful!')
             return redirect('delivery_out')
 
-        context = {'header_form': header_form, 'item_formset': item_formset}
+        context = {
+            'header_form': header_form, 
+            'item_formset': item_formset
+        }
         return render(request, 'inventory/delivery_out.html', context)
 
-# inventory/views.py
-
 class DeliveryInView(LoginRequiredMixin, View):
+    DeliveryInItemFormSet = inlineformset_factory(
+        DeliveryInHeader, DeliveryInItem, form=DeliveryInItemForm,
+        extra=1, can_delete=True,
+    )
+
     def get(self, request):
         header_form = DeliveryInHeaderForm()
-        
-        # This query now fetches the contact's name instead of their ID.
-        pending_deliveries = DeliveryOutItem.objects.filter(
-            issued_quantity__gt=models.F('returned_quantity')
-        ).values('header__to_person__name').distinct().order_by('header__to_person__name')
+        item_formset = self.DeliveryInItemFormSet()
+        # Get contacts who have pending items
+        pending_contacts = Contact.objects.filter(
+            deliveries_to__items__isnull=False,
+            deliveries_to__items__issued_quantity__gt=models.F('deliveries_to__items__returned_quantity')
+        ).distinct()
         
         context = {
             'header_form': header_form,
-            'pending_persons': [p['header__to_person__name'] for p in pending_deliveries],
-            # We also need to pass the list of warehouses for the JavaScript to use.
-            'warehouses': WarehouseMaster.objects.all(),
+            'item_formset': item_formset,
+            'pending_contacts': pending_contacts
         }
         return render(request, 'inventory/delivery_in.html', context)
-
+    
     @transaction.atomic
     def post(self, request):
         header_form = DeliveryInHeaderForm(request.POST)
-        original_item_ids = request.POST.getlist('original_item_id')
-        return_quantities = request.POST.getlist('return_quantity')
-        return_warehouse_ids = request.POST.getlist('return_warehouse_id')
+        item_formset = self.DeliveryInItemFormSet(request.POST)
 
-        # Safely combine the lists into tuples
-        returned_items_data = zip(original_item_ids, return_quantities, return_warehouse_ids)
-
-        if header_form.is_valid() and original_item_ids:
+        if header_form.is_valid() and item_formset.is_valid():
             delivery_header = header_form.save(commit=False)
             delivery_header.created_by = request.user
             delivery_header.save()
 
-            # Loop through the combined data
-            for item_id, qty_str, warehouse_id in returned_items_data:
-                return_qty = int(qty_str)
-                if return_qty > 0:
-                    original_item = DeliveryOutItem.objects.get(pk=item_id)
-                    return_warehouse = WarehouseMaster.objects.get(pk=warehouse_id)
+            for form in item_formset:
+                if form.cleaned_data and not form.cleaned_data.get('DELETE'):
+                    item_instance = form.save(commit=False)
+                    item_instance.header = delivery_header
                     
-                    if return_qty > original_item.pending_quantity:
-                        messages.error(request, f"Cannot return {return_qty} of {original_item.item.name}, only {original_item.pending_quantity} is pending.")
-                        return redirect('delivery_in')
-
-                    DeliveryInItem.objects.create(
-                        header=delivery_header,
-                        original_delivery_item=original_item,
-                        returned_quantity=return_qty,
-                        to_warehouse=return_warehouse
-                    )
+                    original_item = item_instance.original_delivery_item
+                    if item_instance.returned_quantity > original_item.pending_quantity:
+                        messages.error(request, f"Cannot return {item_instance.returned_quantity} of {original_item.item.name}, only {original_item.pending_quantity} is pending.")
+                        return redirect('delivery_in') # Abort transaction
                     
-                    original_item.returned_quantity += return_qty
+                    item_instance.save()
+                    original_item.returned_quantity += item_instance.returned_quantity
                     original_item.save()
-
-                    stock, _ = OpeningStock.objects.get_or_create(
-                        item=original_item.item, warehouse=return_warehouse
-                    )
-                    stock.quantity += return_qty
+                    
+                    stock, _ = OpeningStock.objects.get_or_create(item=original_item.item, warehouse=item_instance.to_warehouse)
+                    stock.quantity += item_instance.returned_quantity
                     stock.save()
 
             messages.success(request, 'Material In entry successful!')
             return redirect('delivery_in')
-
-        messages.error(request, 'An error occurred. Please check your entries.')
-        return redirect('delivery_in')
+        
+        # If form is invalid
+        pending_contacts = Contact.objects.filter(deliveries_to__items__isnull=False).distinct()
+        context = {'header_form': header_form, 'item_formset': item_formset, 'pending_contacts': pending_contacts}
+        return render(request, 'inventory/delivery_in.html', context)
     
-# inventory/views.py
+# We need a new form for the item rows that allows the user to select the specific "Material Out" item they are returning.
+
+def get_pending_delivery_items_api(request):
+    person_id = request.GET.get('person_id')
+    search_term = request.GET.get('term', '')
+
+    if not person_id:
+        return JsonResponse({'results': []})
+
+    pending_items = DeliveryOutItem.objects.select_related('item').filter(
+        header__to_person_id=person_id,
+        issued_quantity__gt=models.F('returned_quantity')
+    )
+
+    if search_term:
+        pending_items = pending_items.filter(item__name__icontains=search_term)
+
+    results = [{
+        'id': item.id,
+        'text': f"{item.item.name} (Ref: {item.header.reference_no}, Pending: {item.pending_quantity})"
+    } for item in pending_items]
+    
+    return JsonResponse({'results': results})
 
 class StockReportView(LoginRequiredMixin, View):
     def get(self, request):
@@ -1020,17 +1069,20 @@ def get_pending_items_for_person(request):
 
 def get_items_api(request):
     group_id = request.GET.get('group_id')
-    search_term = request.GET.get('term', '') # 'term' is the default search parameter for Select2
-    
-    items = ItemMaster.objects.filter(group_id=group_id).order_by('name')
-    
-    if search_term:
-        items = items.filter(
-            Q(name__icontains=search_term) | Q(code__icontains=search_term)
-        )
-        
-    results = [{'id': item.id, 'text': f"{item.name} ({item.code or 'No Code'})"} for item in items]
-    
+    term = request.GET.get('term')
+
+    if not group_id:
+        return JsonResponse({'results': []})
+
+    items = Item.objects.filter(group_id=group_id)
+
+    if term:
+        items = items.filter(name__icontains=term)
+
+    results = [
+        {'id': item.id, 'text': item.name}
+        for item in items
+    ]
     return JsonResponse({'results': results})
     
 
@@ -1175,43 +1227,45 @@ class StockAdjustmentView(LoginRequiredMixin, View):
         }
         return render(request, 'inventory/stock_adjustment.html', context)
         
-
-
-# inventory/views.py
-
 class WarehouseTransferReportView(LoginRequiredMixin, View):
     def get(self, request):
         start_date = request.GET.get('start_date')
         end_date = request.GET.get('end_date')
         per_page = request.GET.get('per_page', 10)
 
-        transfer_items_list = WarehouseTransferItem.objects.select_related(
-            'header', 'item', 'from_warehouse', 'to_warehouse'
-        ).all().order_by('-header__date')
+        # The main query is now on the transaction header
+        transfer_headers = WarehouseTransferHeader.objects.select_related(
+            'created_by'
+        ).prefetch_related(
+            'items', 'items__item', 'items__from_warehouse', 'items__to_warehouse'
+        ).all().order_by('-date')
         
         if start_date:
-            transfer_items_list = transfer_items_list.filter(header__date__gte=start_date)
+            transfer_headers = transfer_headers.filter(date__gte=start_date)
         if end_date:
-            transfer_items_list = transfer_items_list.filter(header__date__lte=end_date)
+            transfer_headers = transfer_headers.filter(date__lte=end_date)
         
+        # Handle Export Request
         if request.GET.get('export') == 'csv':
             response = HttpResponse(content_type='text/csv')
             response['Content-Disposition'] = 'attachment; filename="warehouse_transfer_report.csv"'
             writer = csv.writer(response)
             writer.writerow(['Date', 'Ref No.', 'Item', 'From Warehouse', 'To Warehouse', 'Quantity'])
-            for item in transfer_items_list:
-                writer.writerow([
-                    item.header.date, item.header.reference_no, item.item.name,
-                    item.from_warehouse.name, item.to_warehouse.name, item.quantity
-                ])
+            for header in transfer_headers:
+                for item in header.items.all():
+                    writer.writerow([
+                        header.date, header.reference_no, item.item.name,
+                        item.from_warehouse.name, item.to_warehouse.name, item.quantity
+                    ])
             return response
 
-        paginator = Paginator(transfer_items_list, per_page)
+        # Apply Pagination to the headers
+        paginator = Paginator(transfer_headers, per_page)
         page_number = request.GET.get('page')
-        transfer_items_page = paginator.get_page(page_number)
+        transfer_page = paginator.get_page(page_number)
         
         context = {
-            'transfer_items': transfer_items_page,
+            'transactions': transfer_page,
             'per_page': per_page,
             'start_date': start_date,
             'end_date': end_date
@@ -1229,7 +1283,18 @@ class WarehouseTransferUpdateView(LoginRequiredMixin, View):
         transfer_header = WarehouseTransferHeader.objects.get(pk=pk)
         header_form = WarehouseTransferHeaderForm(instance=transfer_header)
         item_formset = self.TransferItemFormSet(instance=transfer_header)
-        context = {'header_form': header_form, 'item_formset': item_formset, 'object': transfer_header}
+        
+        # --- THIS IS THE FIX ---
+        # Manually set the initial value for the 'group' field in each form.
+        for form in item_formset:
+            if form.instance.pk and form.instance.item:
+                form.fields['group'].initial = form.instance.item.group
+        
+        context = {
+            'header_form': header_form, 
+            'item_formset': item_formset, 
+            'object': transfer_header
+        }
         return render(request, 'inventory/warehouse_transfer_edit.html', context)
 
     @transaction.atomic
@@ -1690,7 +1755,7 @@ class ProductionDeleteView(LoginRequiredMixin, DeleteView):
         return super().post(request, *args, **kwargs)
 
 class BOMView(LoginRequiredMixin, View):
-    BOMItemFormSet = inlineformset_factory(BillOfMaterial, BOMItem, form=BOMItemForm, extra=1, can_delete=True),
+    BOMItemFormSet = inlineformset_factory(BillOfMaterial, BOMItem, form=BOMItemForm, extra=1, can_delete=True)
 
     def get(self, request):
         form = BOMForm()
@@ -1721,3 +1786,230 @@ class BOMView(LoginRequiredMixin, View):
         boms = BillOfMaterial.objects.select_related('item').prefetch_related('items__item').all()
         context = {'form': form, 'formset': formset, 'boms': boms}
         return render(request, 'inventory/bom_create.html', context)
+        
+class DeliveryOutUpdateView(LoginRequiredMixin, View):
+    DeliveryOutItemFormSet = inlineformset_factory(
+        DeliveryOutHeader, DeliveryOutItem, form=DeliveryOutItemForm,
+        extra=0, can_delete=True,
+    )
+
+    def dispatch(self, request, *args, **kwargs):
+        # This check runs before the GET or POST method
+        delivery_header = DeliveryOutHeader.objects.get(pk=kwargs['pk'])
+        if DeliveryInItem.objects.filter(original_delivery_item__header=delivery_header).exists():
+            messages.error(request, 'This transaction cannot be edited because returns have been recorded against it.')
+            return redirect('delivery_note_report')
+        return super().dispatch(request, *args, **kwargs)
+
+    def get(self, request, pk):
+        delivery_header = DeliveryOutHeader.objects.get(pk=pk)
+        header_form = DeliveryOutHeaderForm(instance=delivery_header)
+        item_formset = self.DeliveryOutItemFormSet(instance=delivery_header)
+        
+        for form in item_formset:
+            if form.instance.pk and form.instance.item:
+                form.fields['group'].initial = form.instance.item.group
+        
+        context = {
+            'header_form': header_form, 
+            'item_formset': item_formset, 
+            'object': delivery_header
+        }
+        return render(request, 'inventory/delivery_out_edit.html', context)
+
+    @transaction.atomic
+    def post(self, request, pk):
+        delivery_header = DeliveryOutHeader.objects.get(pk=pk)
+        old_items = {item.id: {
+            'item_id': item.item_id, 
+            'quantity': item.issued_quantity, 
+            'warehouse_id': item.from_warehouse_id
+        } for item in delivery_header.items.all()}
+        
+        header_form = DeliveryOutHeaderForm(request.POST, instance=delivery_header)
+        item_formset = self.DeliveryOutItemFormSet(request.POST, instance=delivery_header)
+
+        if header_form.is_valid() and item_formset.is_valid():
+            # 1. Reverse original stock movements (add stock back)
+            for item_id, old_data in old_items.items():
+                stock, _ = OpeningStock.objects.get_or_create(item_id=old_data['item_id'], warehouse_id=old_data['warehouse_id'])
+                stock.quantity += old_data['quantity']
+                stock.save()
+            
+            header_form.save()
+            item_formset.save()
+
+            # 2. Apply new stock movements (subtract stock)
+            for item_instance in delivery_header.items.all():
+                stock, _ = OpeningStock.objects.get_or_create(item=item_instance.item, warehouse=item_instance.from_warehouse)
+                stock.quantity -= item_instance.issued_quantity
+                stock.save()
+
+            messages.success(request, 'Material Out transaction updated successfully!')
+            return redirect('delivery_note_report')
+        
+        context = {'header_form': header_form, 'item_formset': item_formset, 'object': delivery_header}
+        return render(request, 'inventory/delivery_out_edit.html', context)
+
+
+class DeliveryOutDeleteView(LoginRequiredMixin, DeleteView):
+    model = DeliveryOutHeader
+    template_name = 'inventory/delivery_out_confirm_delete.html'
+    success_url = reverse_lazy('delivery_note_report')
+
+    def dispatch(self, request, *args, **kwargs):
+        # This check runs before the GET or POST method
+        self.object = self.get_object()
+        if DeliveryInItem.objects.filter(original_delivery_item__header=self.object).exists():
+            messages.error(request, 'This transaction cannot be deleted because returns have been recorded against it.')
+            return redirect('delivery_note_report')
+        return super().dispatch(request, *args, **kwargs)
+
+    @transaction.atomic
+    def post(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        success_url = self.get_success_url()
+        
+        # Reverse the stock change for each item (add it back)
+        for item in self.object.items.all():
+            stock, _ = OpeningStock.objects.get_or_create(item=item.item, warehouse=item.from_warehouse)
+            stock.quantity += item.issued_quantity
+            stock.save()
+            
+        messages.success(request, f"Material Out {self.object.reference_no} deleted and stock updated.")
+        self.object.delete()
+        return HttpResponseRedirect(success_url)
+        
+class DeliveryNoteReportView(LoginRequiredMixin, View):
+    def get(self, request):
+        per_page = request.GET.get('per_page', 10)
+
+        # Get and paginate Material Out
+        material_out_list = DeliveryOutHeader.objects.prefetch_related(
+            'items__item', 'items__from_warehouse'
+        ).all().order_by('-date')
+        paginator_out = Paginator(material_out_list, per_page)
+        page_number_out = request.GET.get('page_out')
+        material_out_page = paginator_out.get_page(page_number_out)
+
+        # Get and paginate Material In
+        material_in_list = DeliveryInHeader.objects.prefetch_related(
+            'items__original_delivery_item__item', 'items__to_warehouse'
+        ).all().order_by('-date')
+        paginator_in = Paginator(material_in_list, per_page)
+        page_number_in = request.GET.get('page_in')
+        material_in_page = paginator_in.get_page(page_number_in)
+        
+        context = {
+            'material_out_list': material_out_page,
+            'material_in_list': material_in_page,
+            'per_page': per_page
+        }
+        return render(request, 'inventory/delivery_note_report.html', context)
+
+class DeliveryInUpdateView(LoginRequiredMixin, View):
+    DeliveryInItemFormSet = inlineformset_factory(
+        DeliveryInHeader, DeliveryInItem, form=DeliveryInItemForm,
+        extra=0, can_delete=True,
+    )
+
+    def get(self, request, pk):
+        delivery_header = DeliveryInHeader.objects.get(pk=pk)
+        header_form = DeliveryInHeaderForm(instance=delivery_header)
+        item_formset = self.DeliveryInItemFormSet(instance=delivery_header)
+        
+        context = {
+            'header_form': header_form,
+            'item_formset': item_formset,
+            'object': delivery_header
+        }
+        return render(request, 'inventory/delivery_in_edit.html', context)
+
+    @transaction.atomic
+    def post(self, request, pk):
+        delivery_header = DeliveryInHeader.objects.get(pk=pk)
+        old_items = {item.id: {
+            'original_delivery_item': item.original_delivery_item,
+            'returned_quantity': item.returned_quantity,
+            'to_warehouse': item.to_warehouse
+        } for item in delivery_header.items.all()}
+
+        header_form = DeliveryInHeaderForm(request.POST, instance=delivery_header)
+        item_formset = self.DeliveryInItemFormSet(request.POST, instance=delivery_header)
+
+        if header_form.is_valid() and item_formset.is_valid():
+            # 1. Reverse all original stock movements
+            for item_id, old_data in old_items.items():
+                original_item = old_data['original_delivery_item']
+                original_item.returned_quantity -= old_data['returned_quantity']
+                original_item.save()
+                
+                stock, _ = OpeningStock.objects.get_or_create(item=original_item.item, warehouse=old_data['to_warehouse'])
+                stock.quantity -= old_data['returned_quantity']
+                stock.save()
+
+            # 2. Save form changes
+            header_form.save()
+            item_formset.save()
+
+            # 3. Apply new stock movements
+            for item_instance in delivery_header.items.all():
+                original_item = item_instance.original_delivery_item
+                original_item.returned_quantity += item_instance.returned_quantity
+                original_item.save()
+                
+                stock, _ = OpeningStock.objects.get_or_create(item=original_item.item, warehouse=item_instance.to_warehouse)
+                stock.quantity += item_instance.returned_quantity
+                stock.save()
+
+            messages.success(request, 'Material In transaction updated successfully!')
+            return redirect('delivery_note_report')
+        
+        context = {'header_form': header_form, 'item_formset': item_formset, 'object': delivery_header}
+        return render(request, 'inventory/delivery_in_edit.html', context)
+        
+class DeliveryInDeleteView(LoginRequiredMixin, DeleteView):
+    model = DeliveryInHeader
+    template_name = 'inventory/delivery_in_confirm_delete.html'
+    success_url = reverse_lazy('delivery_note_report')
+
+    @transaction.atomic
+    def post(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        # For each item returned, reverse the stock movements
+        for item in self.object.items.all():
+            # Decrease stock in the warehouse it was returned to
+            stock, _ = OpeningStock.objects.get_or_create(item=item.original_delivery_item.item, warehouse=item.to_warehouse)
+            stock.quantity -= item.returned_quantity
+            stock.save()
+
+            # Increase the returned_quantity on the original DeliveryOutItem
+            original_item = item.original_delivery_item
+            original_item.returned_quantity -= item.returned_quantity
+            original_item.save()
+            
+        messages.success(request, f"Material In transaction has been deleted and stock updated.")
+        return super().post(request, *args, **kwargs)
+        
+
+
+class PeriodSettingView(LoginRequiredMixin, View):
+    def get(self, request):
+        # We'll use a single setting record with a specific name
+        setting, created = SystemSetting.objects.get_or_create(
+            name="Active Period",
+            defaults={'start_date': timezone.now().date(), 'end_date': timezone.now().date()}
+        )
+        form = SystemSettingForm(instance=setting)
+        context = {'form': form}
+        return render(request, 'inventory/period_setting.html', context)
+
+    def post(self, request):
+        setting = SystemSetting.objects.get(name="Active Period")
+        form = SystemSettingForm(request.POST, instance=setting)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Active period has been updated.")
+            return redirect('period_setting')
+        context = {'form': form}
+        return render(request, 'inventory/period_setting.html', context)

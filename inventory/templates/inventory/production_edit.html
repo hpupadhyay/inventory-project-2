@@ -45,71 +45,115 @@
 
 <script>
 $(document).ready(function() {
-    // --- EXPLICIT SCRIPT FOR PRODUCED ITEMS ---
+
+    // --- SCRIPT FOR PRODUCED ITEMS (Specific) ---
     function initializeProducedRow(row) {
+        // FIX: The selector now specifically looks for names starting with "produced-"
         const groupSelect = $(row).find('select[name^="produced-"][name$="-group"]');
         const itemSelect = $(row).find('select[name^="produced-"][name$="-item"]');
-        groupSelect.select2({ theme: "classic", width: '100%' });
-        function setupItemSelect(groupId) {
+        
+        $(row).find('select').select2({ theme: "classic", width: '100%' });
+        itemSelect.select2({ theme: "classic", width: '100%', placeholder: 'Select a group first' });
+        itemSelect.prop('disabled', true);
+
+        groupSelect.on('change', function() {
+            const groupId = $(this).val();
+            itemSelect.val(null).trigger('change').prop('disabled', !groupId);
             if (groupId) {
-                itemSelect.prop('disabled', false);
-                itemSelect.select2({ theme: "classic", width: '100%', ajax: { url: "{% url 'get_items_api' %}", dataType: 'json', data: (p) => ({ term: p.term, group_id: groupId }), processResults: (d) => ({ results: d.results })}, placeholder: 'Type to search...'});
-            } else {
-                itemSelect.prop('disabled', true);
-                itemSelect.select2({ theme: "classic", width: '100%', placeholder: 'Select a group first' });
+                itemSelect.select2({
+                    theme: "classic", width: '100%',
+                    ajax: { url: "{% url 'get_items_api' %}", dataType: 'json', data: (p) => ({ term: p.term, group_id: groupId }), processResults: (d) => ({ results: d.results }) }
+                });
             }
-        }
-        groupSelect.on('change', function() { itemSelect.val(null).trigger('change'); setupItemSelect($(this).val()); });
-        setupItemSelect(groupSelect.val());
+        });
+        if (groupSelect.val()) { groupSelect.trigger('change'); }
     }
     $('#produced-form-list .item-form').each(function() { initializeProducedRow(this); });
     $('#add-produced-form').click(function() {
         const totalForms = document.querySelector('input[name="produced-TOTAL_FORMS"]');
         const formIndex = parseInt(totalForms.value);
-        const newRowHtml = $('#produced-empty-form').prop('outerHTML').replace(/__prefix__/g, formIndex);
-        const newRow = $(newRowHtml).appendTo('#produced-form-list');
+        const newRowsHtml = $('#produced-empty-form-template').html().replace(/__prefix__/g, formIndex);
+        const newRows = $(newRowsHtml).appendTo('#produced-form-list');
         totalForms.value = formIndex + 1;
-        initializeProducedRow(newRow);
+        initializeProducedRow(newRows.filter('.item-form'));
     });
 
-    // --- EXPLICIT SCRIPT FOR CONSUMED ITEMS ---
+    // --- SCRIPT FOR CONSUMED ITEMS (Specific) ---
     function initializeConsumedRow(row) {
+        // FIX: The selector now specifically looks for names starting with "consumed-"
         const groupSelect = $(row).find('select[name^="consumed-"][name$="-group"]');
         const itemSelect = $(row).find('select[name^="consumed-"][name$="-item"]');
-        groupSelect.select2({ theme: "classic", width: '100%' });
-        function setupItemSelect(groupId) {
+        const detailsRow = $(row).next('.stock-details-row');
+        const detailsCell = detailsRow.find('td');
+        
+        $(row).find('select').select2({ theme: "classic", width: '100%' });
+        itemSelect.select2({ theme: "classic", width: '100%', placeholder: 'Select a group first' });
+        itemSelect.prop('disabled', true);
+
+        groupSelect.on('change', function() {
+            detailsRow.addClass('hidden');
+            const groupId = $(this).val();
+            itemSelect.val(null).trigger('change').prop('disabled', !groupId);
             if (groupId) {
-                itemSelect.prop('disabled', false);
-                itemSelect.select2({ theme: "classic", width: '100%', ajax: { url: "{% url 'get_items_api' %}", dataType: 'json', data: (p) => ({ term: p.term, group_id: groupId }), processResults: (d) => ({ results: d.results })}, placeholder: 'Type to search...'});
-            } else {
-                itemSelect.prop('disabled', true);
-                itemSelect.select2({ theme: "classic", width: '100%', placeholder: 'Select a group first' });
+                itemSelect.select2({
+                    theme: "classic", width: '100%',
+                    ajax: { url: "{% url 'get_items_api' %}", dataType: 'json', data: (p) => ({ term: p.term, group_id: groupId }), processResults: (d) => ({ results: d.results }) }
+                });
             }
-        }
-        groupSelect.on('change', function() { itemSelect.val(null).trigger('change'); setupItemSelect($(this).val()); });
-        setupItemSelect(groupSelect.val());
+        });
+        
+        itemSelect.on('select2:select', function(e) {
+            const itemId = e.params.data.id;
+            fetch(`/api/get-item-stock-details/?item_id=${itemId}`).then(res => res.json()).then(data => {
+                let html = '<strong class="mr-2">Stock:</strong> ';
+                if (data.stock_details && data.stock_details.length > 0) {
+                    html += data.stock_details.map(s => `${s.warehouse}: <span class="font-bold">${s.quantity}</span>`).join(' | ');
+                } else { html += 'None'; }
+                detailsCell.html(html);
+                detailsRow.removeClass('hidden');
+            });
+        });
+        if (groupSelect.val()) { groupSelect.trigger('change'); }
     }
     $('#consumed-form-list .item-form').each(function() { initializeConsumedRow(this); });
     $('#add-consumed-form').click(function() {
         const totalForms = document.querySelector('input[name="consumed-TOTAL_FORMS"]');
         const formIndex = parseInt(totalForms.value);
-        const newRowHtml = $('#consumed-empty-form').prop('outerHTML').replace(/__prefix__/g, formIndex);
-        const newRow = $(newRowHtml).appendTo('#consumed-form-list');
+        const newRowsHtml = $('#consumed-empty-form-template').html().replace(/__prefix__/g, formIndex);
+        const newRows = $(newRowsHtml).appendTo('#consumed-form-list');
         totalForms.value = formIndex + 1;
-        initializeConsumedRow(newRow);
+        initializeConsumedRow(newRows.filter('.item-form'));
     });
 
-    // --- REMOVE BUTTON HANDLER (Works for both) ---
+    // --- REMOVE BUTTON HANDLER ---
     $('tbody').on('click', '.remove-item-form', function() {
         const itemRow = $(this).closest('.item-form');
+        const detailsRow = itemRow.next('.stock-details-row');
         const deleteInput = itemRow.find('input[name$="-DELETE"]');
         if (deleteInput.length > 0) {
             deleteInput.prop('checked', true);
             itemRow.hide();
+            detailsRow.hide();
         } else {
             itemRow.remove();
+            detailsRow.remove();
         }
     });
 });
+</script>
+<script>
+{% if messages %}
+    {% for message in messages %}
+        Toastify({
+            text: "{{ message }}",
+            duration: 3000,
+            close: true,
+            gravity: "top", // `top` or `bottom`
+            position: "right", // `left`, `center` or `right`
+            backgroundColor: "{% if message.tags == 'success' %}#4CAF50{% else %}#F44336{% endif %}", // Green for success, Red for error
+            stopOnFocus: true
+        }).showToast();
+    {% endfor %}
+{% endif %}
 </script>
 {% endblock %}

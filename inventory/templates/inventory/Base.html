@@ -10,6 +10,10 @@
 
     <link rel="stylesheet" href="{% static 'inventory/vendor/css/all.min.css' %}">
     <link rel="stylesheet" href="{% static 'inventory/vendor/css/select2.min.css' %}">
+	
+	<link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css">
+
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
     
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
@@ -100,6 +104,7 @@
 									<li><a href="{% url 'outward_report' %}" class="flex items-center w-full p-2 pl-11 text-base font-normal text-gray-300 rounded-lg hover:bg-gray-700">Outward Report</a></li>
 									<li><a href="{% url 'production_report' %}" class="flex items-center w-full p-2 pl-11 text-base font-normal text-gray-300 rounded-lg hover:bg-gray-700">Production Report</a></li>
 									<li><a href="{% url 'warehouse_transfer_report' %}" class="flex items-center w-full p-2 pl-11 text-base font-normal text-gray-300 rounded-lg hover:bg-gray-700">Warehouse Transfer Report</a></li>
+									<li><a href="{% url 'delivery_note_report' %}" class="flex items-center w-full p-2 pl-11 text-base font-normal text-gray-300 rounded-lg hover:bg-gray-700">Delivery Note Report</a></li>
 								</ul>
 					</li>
 				
@@ -140,6 +145,7 @@
 						</button>
 						<ul class="submenu hidden py-1 space-y-1">
 							<li><a href="{% url 'bom_create' %}" class="flex items-center w-full p-2 pl-11 text-base font-normal text-gray-300 rounded-lg hover:bg-gray-700">Bill of Materials</a></li>
+							<li><a href="{% url 'period_setting' %}" class="flex items-center w-full p-2 pl-11 text-base font-normal text-gray-300 rounded-lg hover:bg-gray-700">Period Settings</a></li>
 						</ul>
 					</li>
 				</ul>
@@ -153,6 +159,7 @@
 					</li>
 					
 					</ul>
+				
 			</nav>			
 		<div class="p-4">
                 <a href="{% url 'logout' %}" id="logout-btn" class="w-full flex items-center justify-center p-2 text-base font-normal text-white bg-red-600 rounded-lg hover:bg-red-700">

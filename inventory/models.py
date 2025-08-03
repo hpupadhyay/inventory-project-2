@@ -227,3 +227,11 @@ class BOMItem(models.Model):
 
     def __str__(self):
         return f"{self.quantity} of {self.item.name}"
+
+class SystemSetting(models.Model):
+    name = models.CharField(max_length=50, unique=True)
+    start_date = models.DateField()
+    end_date = models.DateField()
+
+    def __str__(self):
+        return self.name

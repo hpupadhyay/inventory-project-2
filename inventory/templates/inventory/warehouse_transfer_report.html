@@ -5,6 +5,7 @@
     <h2 class="text-3xl font-bold">Warehouse Transfer Report</h2>
 </div>
 
+<!-- Controls -->
 <div class="bg-white p-6 rounded-lg shadow-md mb-8">
     <div class="flex justify-between items-end">
         <form method="get" class="flex items-end space-x-4">
@@ -34,45 +35,89 @@
     </div>
 </div>
 
+<!-- Report Table -->
 <div class="bg-white p-6 rounded-lg shadow-md overflow-x-auto">
     <table class="min-w-full bg-white text-sm">
         <thead class="bg-gray-100">
             <tr>
+                <th class="py-2 px-3 border-b text-left w-8"></th>
                 <th class="py-2 px-3 border-b text-left">Date</th>
                 <th class="py-2 px-3 border-b text-left">Ref No.</th>
-                <th class="py-2 px-3 border-b text-left">Item</th>
-                <th class="py-2 px-3 border-b text-left">From Warehouse</th>
-                <th class="py-2 px-3 border-b text-left">To Warehouse</th>
-                <th class="py-2 px-3 border-b text-right">Quantity</th>
+                <th class="py-2 px-3 border-b text-left">Created By</th>
                 <th class="py-2 px-3 border-b text-left">Actions</th>
             </tr>
         </thead>
         <tbody>
-            {% for item in transfer_items %}
+            {% for header in transactions %}
             <tr class="hover:bg-gray-50">
-                <td class="py-2 px-3 border-b">{{ item.header.date }}</td>
-                <td class="py-2 px-3 border-b">{{ item.header.reference_no }}</td>
-                <td class="py-2 px-3 border-b">{{ item.item.name }}</td>
-                <td class="py-2 px-3 border-b">{{ item.from_warehouse.name }}</td>
-                <td class="py-2 px-3 border-b">{{ item.to_warehouse.name }}</td>
-                <td class="py-2 px-3 border-b text-right">{{ item.quantity|floatformat:2 }}</td>
+                <td class="py-2 px-3 border-b text-center">
+                    <button class="toggle-details text-blue-500 hover:text-blue-700" title="Show/Hide Items">
+                        <i class="fas fa-plus-circle"></i>
+                    </button>
+                </td>
+                <td class="py-2 px-3 border-b">{{ header.date }}</td>
+                <td class="py-2 px-3 border-b">{{ header.reference_no }}</td>
+                <td class="py-2 px-3 border-b">{{ header.created_by.username }}</td>
                 <td class="py-2 px-3 border-b whitespace-nowrap">
-                    <a href="{% url 'warehouse_transfer_edit' item.header.pk %}" class="text-blue-600 hover:text-blue-800 mr-3" title="Edit Transaction"><i class="fas fa-edit"></i></a>
-                    <a href="{% url 'warehouse_transfer_delete' item.header.pk %}" class="text-red-600 hover:text-red-800" title="Delete Transaction"><i class="fas fa-trash-alt"></i></a>
+                    <a href="{% url 'warehouse_transfer_edit' header.pk %}" class="text-blue-600 hover:text-blue-800 mr-3" title="Edit"><i class="fas fa-edit"></i></a>
+                    <a href="{% url 'warehouse_transfer_delete' header.pk %}" class="text-red-600 hover:text-red-800" title="Delete"><i class="fas fa-trash-alt"></i></a>
+                </td>
+            </tr>
+            <!-- Hidden row with item details -->
+            <tr class="details-row hidden">
+                <td colspan="5" class="p-0">
+                    <div class="p-4 bg-gray-50">
+                        <h4 class="font-bold mb-2">Items in Ref #{{ header.reference_no }}:</h4>
+                        <table class="min-w-full text-xs">
+                           <thead class="bg-gray-200"><tr><th class="text-left p-2">Item</th><th class="text-left p-2">From Warehouse</th><th class="text-left p-2">To Warehouse</th><th class="text-right p-2">Quantity</th></tr></thead>
+                           <tbody>
+                                {% for item in header.items.all %}
+                                <tr class="border-t"><td class="p-2">{{ item.item.name }}</td><td class="p-2">{{ item.from_warehouse.name }}</td><td class="p-2">{{ item.to_warehouse.name }}</td><td class="text-right p-2">{{ item.quantity|floatformat:2 }}</td></tr>
+                                {% endfor %}
+                           </tbody>
+                        </table>
+                    </div>
                 </td>
             </tr>
             {% empty %}
-            <tr><td colspan="7" class="py-4 text-center text-gray-500">No transfers found for the selected filters.</td></tr>
+            <tr><td colspan="5" class="py-4 text-center text-gray-500">No transfers found.</td></tr>
             {% endfor %}
         </tbody>
     </table>
     
+    <!-- Pagination Controls -->
     <div class="mt-4 flex justify-between items-center">
-        <span class="text-sm text-gray-700">Page {{ transfer_items.number }} of {{ transfer_items.paginator.num_pages }}.</span>
+        <span class="text-sm text-gray-700">
+            Page {{ transactions.number }} of {{ transactions.paginator.num_pages }}.
+        </span>
         <div class="flex space-x-2">
-            {% if transfer_items.has_previous %}<a href="?page=1&per_page={{ per_page }}&start_date={{ start_date|default:'' }}&end_date={{ end_date|default:'' }}" class="px-3 py-1 border rounded-md text-sm">&laquo; First</a><a href="?page={{ transfer_items.previous_page_number }}&per_page={{ per_page }}&start_date={{ start_date|default:'' }}&end_date={{ end_date|default:'' }}" class="px-3 py-1 border rounded-md text-sm">Previous</a>{% endif %}
-            {% if transfer_items.has_next %}<a href="?page={{ transfer_items.next_page_number }}&per_page={{ per_page }}&start_date={{ start_date|default:'' }}&end_date={{ end_date|default:'' }}" class="px-3 py-1 border rounded-md text-sm">Next</a><a href="?page={{ transfer_items.paginator.num_pages }}&per_page={{ per_page }}&start_date={{ start_date|default:'' }}&end_date={{ end_date|default:'' }}" class="px-3 py-1 border rounded-md text-sm">Last &raquo;</a>{% endif %}
+            {% if transactions.has_previous %}<a href="?page={{ transactions.previous_page_number }}&per_page={{ per_page }}&start_date={{ start_date|default:'' }}&end_date={{ end_date|default:'' }}" class="px-3 py-1 border rounded-md text-sm">Previous</a>{% endif %}
+            {% if transactions.has_next %}<a href="?page={{ transactions.next_page_number }}&per_page={{ per_page }}&start_date={{ start_date|default:'' }}&end_date={{ end_date|default:'' }}" class="px-3 py-1 border rounded-md text-sm">Next</a>{% endif %}
         </div>
     </div>
 </div>
+
+<script>
+$(document).ready(function() {
+    $('.toggle-details').click(function() {
+        $(this).closest('tr').next('.details-row').toggleClass('hidden');
+        $(this).find('i').toggleClass('fa-plus-circle fa-minus-circle');
+    });
+});
+</script>
+<script>
+{% if messages %}
+    {% for message in messages %}
+        Toastify({
+            text: "{{ message }}",
+            duration: 3000,
+            close: true,
+            gravity: "top", // `top` or `bottom`
+            position: "right", // `left`, `center` or `right`
+            backgroundColor: "{% if message.tags == 'success' %}#4CAF50{% else %}#F44336{% endif %}", // Green for success, Red for error
+            stopOnFocus: true
+        }).showToast();
+    {% endfor %}
+{% endif %}
+</script>
 {% endblock %}

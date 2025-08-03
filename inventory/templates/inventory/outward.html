@@ -8,7 +8,6 @@
     {% csrf_token %}
 	<div class="bg-white p-6 rounded-lg shadow-md mb-8">
 		<h3 class="text-xl font-bold mb-4">Invoice Details</h3>
-		{% if messages %}{% for message in messages %}<div class="p-4 mb-4 text-sm rounded-lg {% if message.tags == 'success' %}bg-green-100 text-green-700{% else %}bg-red-100 text-red-700{% endif %}" role="alert">{{ message }}</div>{% endfor %}{% endif %}
 		
 		<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
 			{{ header_form|crispy }}
@@ -136,5 +135,20 @@ $(document).ready(function() {
         detailsRow.remove();
     });
 });
+</script>
+<script>
+{% if messages %}
+    {% for message in messages %}
+        Toastify({
+            text: "{{ message }}",
+            duration: 3000,
+            close: true,
+            gravity: "top", // `top` or `bottom`
+            position: "right", // `left`, `center` or `right`
+            backgroundColor: "{% if message.tags == 'success' %}#4CAF50{% else %}#F44336{% endif %}", // Green for success, Red for error
+            stopOnFocus: true
+        }).showToast();
+    {% endfor %}
+{% endif %}
 </script>
 {% endblock %}

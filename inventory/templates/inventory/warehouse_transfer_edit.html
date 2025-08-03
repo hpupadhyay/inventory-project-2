@@ -18,11 +18,12 @@
         {{ item_formset.management_form }}
         <div class="overflow-x-auto">
             <table class="min-w-full">
-                <thead><tr class="border-b"><th class="text-left py-2 px-3">Group</th><th class="text-left py-2 px-3">Item</th><th class="text-left py-2 px-3">From</th><th class="text-left py-2 px-3">To</th><th class="text-left py-2 px-3">Qty</th><th class="text-left py-2 px-3">Delete?</th></tr></thead>
+                <thead><tr class="border-b"><th class="text-left py-2 px-3">Group</th><th class="text-left py-2 px-3">Item</th><th class="text-left py-2 px-3">From</th><th class="text-left py-2 px-3">To</th><th class="text-left py-2 px-3">Qty</th><th class="text-left py-2 px-3">Actions</th></tr></thead>
                 <tbody id="item-form-list">
                     {% for form in item_formset %}
                     <tr class="item-form border-b">
-                        <td class="py-2 px-3">{{ form.group }}</td><td class="py-2 px-3">{{ form.item }}</td><td class="py-2 px-3">{{ form.from_warehouse }}</td><td class="py-2 px-3">{{ form.to_warehouse }}</td><td class="py-2 px-3">{{ form.quantity }}</td><td class="py-2 px-3 align-bottom">{{ form.DELETE }}</td><td class="hidden">{{ form.id }}</td>
+                        <td class="py-2 px-3">{{ form.group }}</td><td class="py-2 px-3">{{ form.item }}</td><td class="py-2 px-3">{{ form.from_warehouse }}</td><td class="py-2 px-3">{{ form.to_warehouse }}</td><td class="py-2 px-3">{{ form.quantity }}</td>
+                        <td class="py-2 px-3 align-bottom whitespace-nowrap"><span class="hidden">{{ form.DELETE }}</span><button type="button" class="remove-item-form text-red-500 hover:text-red-700 font-bold">Remove</button></td><td class="hidden">{{ form.id }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -33,4 +34,83 @@
 
     <div class="mt-8"><button type="submit" class="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700">Update Transfer</button></div>
 </form>
+
+<table class="hidden">
+    <tr id="empty-form" class="item-form border-b"><td class="py-2 px-3">{{ item_formset.empty_form.group }}</td><td class="py-2 px-3">{{ item_formset.empty_form.item }}</td><td class="py-2 px-3">{{ item_formset.empty_form.from_warehouse }}</td><td class="py-2 px-3">{{ item_formset.empty_form.to_warehouse }}</td><td class="py-2 px-3">{{ item_formset.empty_form.quantity }}</td><td class="py-2 px-3 align-bottom"><button type="button" class="remove-item-form text-red-500 hover:text-red-700 font-bold">Remove</button></td></tr>
+</table>
+
+<script>
+$(document).ready(function() {
+    function initializeRow(row) {
+        $(row).find('select').select2({ theme: "classic", width: '100%' });
+        const groupSelect = $(row).find('select[name$="-group"]');
+        const itemSelect = $(row).find('select[name$="-item"]');
+        
+        function setupItemSelect(groupId) {
+            if (groupId) {
+                itemSelect.prop('disabled', false);
+                itemSelect.select2({
+                    theme: "classic", width: '100%',
+                    ajax: {
+                        url: "{% url 'get_items_api' %}", dataType: 'json',
+                        data: (params) => ({ term: params.term, group_id: groupId }),
+                        processResults: (data) => ({ results: data.results })
+                    }
+                });
+            } else {
+                itemSelect.prop('disabled', true);
+                itemSelect.select2({ theme: "classic", width: '100%', placeholder: 'Select a group first' });
+            }
+        }
+        groupSelect.on('change', function() {
+            itemSelect.val(null).trigger('change');
+            setupItemSelect($(this).val());
+        });
+        setupItemSelect(groupSelect.val());
+    }
+    
+    function setupAddButton(prefix) {
+        const addBtn = $('#add-item-form');
+        const emptyFormTemplate = $('#empty-form').prop('outerHTML');
+        addBtn.click(function() {
+            const totalFormsInput = document.querySelector(`input[name="${prefix}-TOTAL_FORMS"]`);
+            const formIndex = parseInt(totalFormsInput.value);
+            const newRowHtml = emptyFormTemplate.replace(/__prefix__/g, formIndex);
+            const newRow = $(newRowHtml).appendTo($('#item-form-list'));
+            totalFormsInput.value = formIndex + 1;
+            initializeRow(newRow);
+        });
+    }
+
+    $('#item-form-list .item-form').each(function() { initializeRow(this); });
+    setupAddButton('items');
+
+    $('#item-form-list').on('click', '.remove-item-form', function() {
+        const itemRow = $(this).closest('.item-form');
+        const deleteInput = itemRow.find('input[name$="-DELETE"]');
+        if (deleteInput.length > 0) {
+            deleteInput.prop('checked', true);
+            itemRow.hide();
+        } else {
+            itemRow.remove();
+        }
+    });
+});
+</script>
+
+<script>
+{% if messages %}
+    {% for message in messages %}
+        Toastify({
+            text: "{{ message }}",
+            duration: 3000,
+            close: true,
+            gravity: "top", // `top` or `bottom`
+            position: "right", // `left`, `center` or `right`
+            backgroundColor: "{% if message.tags == 'success' %}#4CAF50{% else %}#F44336{% endif %}", // Green for success, Red for error
+            stopOnFocus: true
+        }).showToast();
+    {% endfor %}
+{% endif %}
+</script>
 {% endblock %}
