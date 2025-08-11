@@ -1,0 +1,184 @@
+{% extends "inventory/base.html" %}
+{% load crispy_forms_tags %}
+
+{% block content %}
+<h2 class="text-3xl font-bold mb-6">Item Master</h2>
+
+	<div class="bg-white p-6 rounded-lg shadow-md mb-8">
+		<h3 class="text-xl font-bold mb-4">Add New Item</h3>
+		<form method="post" class="space-y-4">
+			{% csrf_token %}
+			{% if form.non_field_errors %}<div class="p-4 mb-4 text-sm text-red-700 bg-red-100 rounded-lg">{{ form.non_field_errors }}</div>{% endif %}
+			<div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+				{{ form|crispy }}
+			</div>
+			<div class="flex justify-end">
+				<button type="submit" class="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700">Add Item</button>
+			</div>
+		</form>
+	</div>
+
+	<div class="bg-white p-6 rounded-lg shadow-md mb-8">
+		<form method="get" class="flex flex-wrap items-end gap-4">
+			<div>
+				<label for="search_query" class="block font-medium">Search</label>
+				<input type="text" name="search_query" id="search_query" value="{{ search_query|default:'' }}" class="mt-1 border-gray-300 rounded-md">
+			</div>
+			<div>
+				<label for="group_filter" class="block font-medium">Group</label>
+				<select name="group_filter" id="group_filter" class="mt-1 border-gray-300 rounded-md">
+					<option value="">All Groups</option>
+					{% for group in groups %}
+					<option value="{{ group.pk }}" {% if group.pk == group_filter %}selected{% endif %}>{{ group.name }}</option>
+					{% endfor %}
+				</select>
+			</div>
+			<div>
+				<label for="per_page" class="block font-medium">Show</label>
+				<select name="per_page" id="per_page" class="mt-1 border-gray-300 rounded-md">
+					<option value="10" {% if per_page == '10' %}selected{% endif %}>10</option>
+					<option value="20" {% if per_page == '20' %}selected{% endif %}>20</option>
+					<option value="50" {% if per_page == '50' %}selected{% endif %}>50</option>
+				</select>
+			</div>
+			<button type="submit" class="bg-gray-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-700">Search</button>
+		</form>
+	</div>
+
+	<div class="bg-white p-6 rounded-lg shadow-md overflow-x-auto">
+		</div>
+		
+    
+    <table class="min-w-full bg-white">
+        <thead class="bg-gray-100">
+            <tr>
+                <th class="py-2 px-4 border-b text-left">Item Name</th>
+                <th class="py-2 px-4 border-b text-left">Item Code</th>
+                <th class="py-2 px-4 border-b text-left">Group</th>
+                <th class="py-2 px-4 border-b text-left">Unit</th>
+				<th class="py-2 px-4 border-b text-left">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in items %} <tr class="hover:bg-gray-50">
+                <td class="py-2 px-4 border-b">{{ item.name }}</td>
+                <td class="py-2 px-4 border-b">{{ item.code|default:"N/A" }}</td>
+                <td class="py-2 px-4 border-b">{{ item.group.name }}</td>
+                <td class="py-2 px-4 border-b">{{ item.unit }}</td>
+				<td class="py-2 px-4 border-b whitespace-nowrap">
+					<a href="{% url 'item_edit' item.pk %}" class="text-blue-600 hover:text-blue-800 mr-3"><i class="fas fa-edit"></i></a>
+					<a href="{% url 'item_delete' item.pk %}" class="text-red-600 hover:text-red-800"><i class="fas fa-trash-alt"></i></a>
+			</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="4" class="py-4 text-center text-gray-500">No items found matching your criteria.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <div class="mt-4 flex justify-between items-center">
+        <span class="text-sm text-gray-700">
+            Page {{ items.number }} of {{ items.paginator.num_pages }}.
+        </span>
+        <div class="flex space-x-2">
+            {% if items.has_previous %}
+                <a href="?page=1&search_query={{ search_query }}&group_filter={{ group_filter }}&per_page={{ per_page }}" class="px-3 py-1 border rounded-md text-sm">&laquo; First</a>
+                <a href="?page={{ items.previous_page_number }}&search_query={{ search_query }}&group_filter={{ group_filter }}&per_page={{ per_page }}" class="px-3 py-1 border rounded-md text-sm">Previous</a>
+            {% endif %}
+            {% if items.has_next %}
+                <a href="?page={{ items.next_page_number }}&search_query={{ search_query }}&group_filter={{ group_filter }}&per_page={{ per_page }}" class="px-3 py-1 border rounded-md text-sm">Next</a>
+                <a href="?page={{ items.paginator.num_pages }}&search_query={{ search_query }}&group_filter={{ group_filter }}&per_page={{ per_page }}" class="px-3 py-1 border rounded-md text-sm">Last &raquo;</a>
+            {% endif %}
+        </div>
+    </div>
+
+
+<! --Import from CSV-->
+
+<div class="bg-white p-6 rounded-lg shadow-md mb-8">
+    <h3 class="text-xl font-bold mb-4">Import from CSV</h3>
+    <p class="text-sm text-gray-600 mb-2">CSV format: Item Name, Item Code, Group Name, Unit</p>
+
+    <form id="import-csv-form" method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        <div class="flex items-center">
+            <input type="file" name="csv_file" accept=".csv" required class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+            <button type="submit" name="import_csv" class="bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700 ml-4 whitespace-nowrap">Import CSV</button>
+        </div>
+    </form>
+    <div id="import-messages" class="mt-4"></div>
+</div>
+
+<script>
+$(document).ready(function() {
+    const importModal = $('#import-modal');
+    const importForm = $('#import-csv-form');
+    const messageDiv = $('#import-messages');
+
+    // Open and close the modal
+    $('#open-import-modal').click(() => importModal.removeClass('hidden').addClass('flex'));
+    $('#close-import-modal').click(() => importModal.addClass('hidden').removeClass('flex'));
+
+    // Handle AJAX form submission for import
+    importForm.on('submit', async function(e) {
+        e.preventDefault();
+        messageDiv.html('<p class="text-blue-600">Processing...</p>');
+
+        const formData = new FormData(this);
+        const response = await fetch("{% url 'item_master' %}", {
+            method: 'POST',
+            body: formData,
+            headers: { 'X-CSRFToken': '{{ csrf_token }}', 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        const data = await response.json();
+
+        // Display the message from the server
+        let messageClass = data.status === 'complete' || data.status === 'success' ? 'text-green-700 bg-green-100' : 'text-red-700 bg-red-100';
+        messageDiv.html(`<div class="p-4 rounded-lg ${messageClass}">${data.message}</div>`);
+
+        // --- THIS IS THE CORRECTED DOWNLOAD LOGIC ---
+        // If the server sent back any report data, trigger a download
+        if (data.report_data) {
+            const blob = new Blob([data.report_data], { type: 'text/csv;charset=utf-8;' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            a.download = data.filename || 'import_summary.csv';
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            a.remove();
+        } 
+        
+        // Reload the page after the import is complete to show the new data
+        if (data.status === 'complete' || data.status === 'success') {
+            setTimeout(() => window.location.reload(), 2000);
+        }
+    });
+
+    // Handle toast messages for other actions (like manual add)
+    {% if messages %}
+    {% for message in messages %}
+        Toastify({ text: "{{ message }}", duration: 3000, close: true, gravity: "top", position: "right", backgroundColor: "{% if message.tags == 'success' %}#4CAF50{% else %}#F44336{% endif %}", stopOnFocus: true }).showToast();
+    {% endfor %}
+    {% endif %}
+});
+</script>
+<script>
+{% if messages %}
+    {% for message in messages %}
+        Toastify({
+            text: "{{ message }}",
+            duration: 3000,
+            close: true,
+            gravity: "top", // `top` or `bottom`
+            position: "right", // `left`, `center` or `right`
+            backgroundColor: "{% if message.tags == 'success' %}#4CAF50{% else %}#F44336{% endif %}", // Green for success, Red for error
+            stopOnFocus: true
+        }).showToast();
+    {% endfor %}
+{% endif %}
+</script>
+
+{% endblock %}
